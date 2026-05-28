@@ -15,8 +15,9 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "typecheck": "tsc --noEmit",
-    "test": "echo \"(no tests yet)\" && exit 0",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "prepublishOnly": "npm run build",
     "smoke": "node dist/cli.js report",
     "changelog": "conventional-changelog -p angular -i CHANGELOG.md -s",
@@ -34,7 +35,8 @@
     "@types/node": "^20",
     "conventional-changelog-angular": "^8.3.1",
     "conventional-changelog-cli": "^4.1.0",
-    "typescript": "^5.6.0"
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.9"
   },
   "keywords": [
     "claude-code",
