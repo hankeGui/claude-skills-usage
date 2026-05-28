@@ -1,0 +1,8 @@
+src/
+tsconfig.json
+.gitignore
+.playwright-cli/
+archive-py/
+*.tgz
+*.log
+.DS_Store

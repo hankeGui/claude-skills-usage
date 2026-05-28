@@ -1,0 +1,59 @@
+{
+  "name": "claude-skills-usage",
+  "version": "0.1.0",
+  "description": "Track and analyze Claude Code Skill invocations: frequency, latency, token cost, triggering prompts, success/failure.",
+  "type": "module",
+  "bin": {
+    "skills-usage": "./dist/cli.js",
+    "claude-skills-usage": "./dist/cli.js"
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "echo \"(no tests yet)\" && exit 0",
+    "prepublishOnly": "npm run build",
+    "smoke": "node dist/cli.js report",
+    "changelog": "conventional-changelog -p angular -i CHANGELOG.md -s",
+    "version": "npm run changelog && git add CHANGELOG.md"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.5.0",
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^20",
+    "conventional-changelog-angular": "^8.3.1",
+    "conventional-changelog-cli": "^4.1.0",
+    "typescript": "^5.6.0"
+  },
+  "keywords": [
+    "claude-code",
+    "claude",
+    "skills",
+    "anthropic",
+    "observability",
+    "telemetry",
+    "agent",
+    "tools"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hankeGui/claude-skills-usage.git"
+  },
+  "homepage": "https://github.com/hankeGui/claude-skills-usage#readme",
+  "bugs": {
+    "url": "https://github.com/hankeGui/claude-skills-usage/issues"
+  },
+  "author": "hankeGui",
+  "license": "MIT"
+}
