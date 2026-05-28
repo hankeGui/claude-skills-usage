@@ -10,6 +10,7 @@ const SCHEMA = `
 CREATE TABLE IF NOT EXISTS skill_calls (
     tool_use_id TEXT PRIMARY KEY,
     skill TEXT NOT NULL,
+    source TEXT,
     args TEXT,
     session_id TEXT,
     cwd TEXT,
@@ -40,7 +41,7 @@ CREATE INDEX IF NOT EXISTS idx_session ON skill_calls(session_id);
 `;
 
 const SCAN_COLS = [
-  "tool_use_id", "skill", "args", "session_id", "cwd", "transcript_path",
+  "tool_use_id", "skill", "source", "args", "session_id", "cwd", "transcript_path",
   "started_at", "ended_at", "duration_sec",
   "input_tokens", "output_tokens", "cache_read_tokens", "cache_creation_tokens",
   "error_count", "interrupted", "user_followup", "user_followup_correction",
@@ -50,6 +51,7 @@ const SCAN_COLS = [
 export interface SkillRow {
   tool_use_id: string;
   skill: string;
+  source: string | null;
   args: string | null;
   session_id: string | null;
   cwd: string | null;
@@ -79,7 +81,24 @@ export function connect(dbPath: string = DB_PATH): Database.Database {
   mkdirSync(dirname(dbPath), { recursive: true });
   const db = new Database(dbPath);
   db.exec(SCHEMA);
+  migrate(db);
   return db;
+}
+
+// Idempotent forward-only migrations for existing databases.
+function migrate(db: Database.Database): void {
+  const cols = db.prepare("PRAGMA table_info(skill_calls)").all() as { name: string }[];
+  const have = new Set(cols.map((c) => c.name));
+  if (!have.has("source")) {
+    db.exec("ALTER TABLE skill_calls ADD COLUMN source TEXT");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_source ON skill_calls(source)");
+  }
+  if (!have.has("cwd")) {
+    // unreachable on real DBs (cwd was always there) — kept for symmetry
+    db.exec("CREATE INDEX IF NOT EXISTS idx_cwd ON skill_calls(cwd)");
+  } else {
+    db.exec("CREATE INDEX IF NOT EXISTS idx_cwd ON skill_calls(cwd)");
+  }
 }
 
 export function upsertCalls(calls: SkillCall[], dbPath: string = DB_PATH): { inserted: number; updated: number } {
@@ -102,6 +121,7 @@ export function upsertCalls(calls: SkillCall[], dbPath: string = DB_PATH): { ins
         const row = {
           tool_use_id: c.tool_use_id,
           skill: c.skill,
+          source: c.source ?? "unknown",
           args: c.args,
           session_id: c.session_id,
           cwd: c.cwd,

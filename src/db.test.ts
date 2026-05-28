@@ -19,6 +19,7 @@ afterEach(() => {
 function makeCall(overrides: Partial<SkillCall> = {}): SkillCall {
   return {
     skill: "demo-skill",
+    source: "user",
     args: "",
     session_id: "s1",
     cwd: "/tmp",

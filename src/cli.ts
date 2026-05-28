@@ -79,16 +79,22 @@ function reportSummary(rows: db.SkillRow[]): void {
     return;
   }
 
-  const bySkill = new Map<string, db.SkillRow[]>();
+  // Group by (skill, source) so the same skill name from a project vs user shows separately.
+  type Key = string;
+  const keyOf = (r: db.SkillRow): Key => `${r.skill ?? "?"}\x00${r.source ?? "unknown"}`;
+  const groups = new Map<Key, db.SkillRow[]>();
   for (const r of rows) {
-    const key = r.skill ?? "?";
-    if (!bySkill.has(key)) bySkill.set(key, []);
-    bySkill.get(key)!.push(r);
+    const k = keyOf(r);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k)!.push(r);
   }
 
-  type Row = { skill: string; n: number; ok: number; fail: number; unk: number; avg: number; tot: number; tok: number; err: number };
+  type Row = { skill: string; source: string; n: number; ok: number; fail: number; unk: number; avg: number; tot: number; tok: number; err: number };
   const out: Row[] = [];
-  for (const [skill, group] of bySkill) {
+  for (const [, group] of groups) {
+    const first = group[0];
+    const skill = first.skill ?? "?";
+    const source = first.source ?? "unknown";
     const n = group.length;
     const ok = group.filter((r) => ["likely_solved", "solved"].includes(rowOutcome(r))).length;
     const fail = group.filter((r) => ["likely_failed", "failed"].includes(rowOutcome(r))).length;
@@ -98,10 +104,11 @@ function reportSummary(rows: db.SkillRow[]): void {
     const tot = durs.reduce((a, b) => a + b, 0);
     const tok = group.reduce((a, r) => a + (r.input_tokens ?? 0) + (r.output_tokens ?? 0), 0);
     const err = group.reduce((a, r) => a + (r.error_count ?? 0), 0);
-    out.push({ skill, n, ok, fail, unk, avg, tot, tok, err });
+    out.push({ skill, source, n, ok, fail, unk, avg, tot, tok, err });
   }
-  out.sort((a, b) => b.n - a.n);
+  out.sort((a, b) => b.n - a.n || a.skill.localeCompare(b.skill));
 
+  const distinctSkills = new Set(out.map((r) => r.skill)).size;
   const totalN = out.reduce((a, r) => a + r.n, 0);
   const totalOk = out.reduce((a, r) => a + r.ok, 0);
   const totalFail = out.reduce((a, r) => a + r.fail, 0);
@@ -113,9 +120,9 @@ function reportSummary(rows: db.SkillRow[]): void {
       (r.label === "unknown" && r.outcome === "unknown")),
   ).length;
 
-  const sep = "=".repeat(100);
+  const sep = "=".repeat(108);
   console.log("\n" + sep);
-  let title = `  Skills Usage Report  (${totalN} calls, ${totalOk} solved, ${totalFail} failed across ${out.length} skills`;
+  let title = `  Skills Usage Report  (${totalN} calls, ${totalOk} solved, ${totalFail} failed across ${distinctSkills} skills`;
   if (labeled) {
     const acc = (matched / labeled) * 100;
     title += `, ${labeled} human-labeled, heuristic agrees ${matched}/${labeled} = ${acc.toFixed(0)}%`;
@@ -124,19 +131,52 @@ function reportSummary(rows: db.SkillRow[]): void {
   console.log(title);
   console.log(sep + "\n");
   console.log(
-    pad("Skill", 22) + pad("Calls", 6, true) + pad("OK", 5, true) + pad("Fail", 5, true) +
+    pad("Skill", 22) + pad("Src", 8) + pad("Calls", 6, true) + pad("OK", 5, true) + pad("Fail", 5, true) +
     pad("?", 5, true) + pad("Avg", 8, true) + pad("Total", 8, true) +
     pad("Tokens", 9, true) + pad("Err", 5, true),
   );
-  console.log("-".repeat(100));
+  console.log("-".repeat(108));
   for (const r of out) {
     console.log(
-      pad(r.skill, 22) + pad(r.n, 6, true) + pad(r.ok, 5, true) + pad(r.fail, 5, true) +
+      pad(r.skill, 22) + pad(r.source, 8) + pad(r.n, 6, true) + pad(r.ok, 5, true) + pad(r.fail, 5, true) +
       pad(r.unk, 5, true) + pad(fmtDur(r.avg), 8, true) + pad(fmtDur(r.tot), 8, true) +
       pad(fmtTok(r.tok), 9, true) + pad(r.err, 5, true),
     );
   }
   console.log();
+}
+
+function reportByCwd(rows: db.SkillRow[]): void {
+  if (!rows.length) return;
+  const byCwd = new Map<string, db.SkillRow[]>();
+  for (const r of rows) {
+    const k = r.cwd ?? "(unknown)";
+    if (!byCwd.has(k)) byCwd.set(k, []);
+    byCwd.get(k)!.push(r);
+  }
+  const sep = "=".repeat(108);
+  console.log("\n" + sep);
+  console.log(`  Skills usage by working directory  (${byCwd.size} cwds)`);
+  console.log(sep + "\n");
+  const cwds = [...byCwd.keys()].sort((a, b) => byCwd.get(b)!.length - byCwd.get(a)!.length);
+  for (const cwd of cwds) {
+    const group = byCwd.get(cwd)!;
+    const tot = group.reduce((a, r) => a + (r.duration_sec ?? 0), 0);
+    console.log(`▸ ${cwd}  (${group.length} calls, ${fmtDur(tot).trim()})`);
+    const perSkill = new Map<string, db.SkillRow[]>();
+    for (const r of group) {
+      const k = `${r.skill ?? "?"} (${r.source ?? "unknown"})`;
+      if (!perSkill.has(k)) perSkill.set(k, []);
+      perSkill.get(k)!.push(r);
+    }
+    const items = [...perSkill.entries()].sort((a, b) => b[1].length - a[1].length);
+    for (const [k, gs] of items) {
+      const ok = gs.filter((r) => ["likely_solved", "solved"].includes(rowOutcome(r))).length;
+      const fail = gs.filter((r) => ["likely_failed", "failed"].includes(rowOutcome(r))).length;
+      console.log(`    ${pad(k, 36)}  ${pad(gs.length, 4, true)} calls  ok=${ok} fail=${fail}`);
+    }
+    console.log();
+  }
 }
 
 function reportTriggers(rows: db.SkillRow[], topN: number): void {
@@ -209,13 +249,14 @@ function cmdIngest(): void {
   doIngest(true);
 }
 
-function cmdReport(opts: { since?: string; skill?: string; triggers?: boolean; top?: string }): void {
+function cmdReport(opts: { since?: string; skill?: string; triggers?: boolean; top?: string; byCwd?: boolean }): void {
   const rows = db.fetchAll({
     sinceDays: opts.since ? parseInt(opts.since, 10) : undefined,
     skill: opts.skill,
   });
   reportSummary(rows);
   if (opts.triggers) reportTriggers(rows, opts.top ? parseInt(opts.top, 10) : 3);
+  if (opts.byCwd) reportByCwd(rows);
 }
 
 async function cmdSetup(opts: { scope?: hookInstall.Scope; noHook?: boolean }): Promise<void> {
@@ -446,6 +487,7 @@ program.command("report")
   .option("--skill <name>", "filter to a specific skill (substring match)")
   .option("--triggers", "show triggering prompts per skill")
   .option("--top <n>", "how many triggering prompts per skill", "3")
+  .option("--by-cwd", "also break down skills by working directory (project)")
   .action(cmdReport);
 
 program.command("export-csv")

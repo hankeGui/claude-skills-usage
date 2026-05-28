@@ -3,6 +3,28 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 export const PROJECTS_DIR = join(homedir(), ".claude", "projects");
+const USER_SKILLS_DIR = join(homedir(), ".claude", "skills");
+
+export type SkillSource = "user" | "project" | "plugin" | "unknown";
+
+const sourceCache = new Map<string, SkillSource>();
+
+function dirExists(p: string): boolean {
+  try { return statSync(p).isDirectory(); } catch { return false; }
+}
+
+export function detectSkillSource(name: string, cwd: string | undefined | null): SkillSource {
+  if (!name) return "unknown";
+  if (name.includes(":")) return "plugin";
+  const key = `${cwd ?? ""}::${name}`;
+  const cached = sourceCache.get(key);
+  if (cached) return cached;
+  let result: SkillSource = "unknown";
+  if (cwd && dirExists(join(cwd, ".claude", "skills", name))) result = "project";
+  else if (dirExists(join(USER_SKILLS_DIR, name))) result = "user";
+  sourceCache.set(key, result);
+  return result;
+}
 
 const SKILL_INJECTION_MARKERS = [
   "Base directory for this skill:",
@@ -27,6 +49,7 @@ export type Outcome = "likely_solved" | "likely_failed" | "unknown";
 
 export interface SkillCall {
   skill: string;
+  source: SkillSource;
   args: string;
   session_id: string;
   cwd: string;
@@ -164,11 +187,14 @@ export function scanTranscript(path: string): SkillCall[] {
       if (block.type !== "tool_use" || block.name !== "Skill") continue;
 
       const input = (block.input as Record<string, unknown>) ?? {};
+      const skillName = String(input.skill ?? "");
+      const cwd = String(e.cwd ?? "");
       const call: SkillCall = {
-        skill: String(input.skill ?? ""),
+        skill: skillName,
+        source: detectSkillSource(skillName, cwd),
         args: String(input.args ?? "").slice(0, 500),
         session_id: String(e.sessionId ?? ""),
-        cwd: String(e.cwd ?? ""),
+        cwd,
         transcript_path: path,
         tool_use_id: String(block.id ?? ""),
         started_at: String(e.timestamp ?? ""),

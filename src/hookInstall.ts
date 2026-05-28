@@ -6,8 +6,24 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Path to the compiled hookEvent.js — sibling of this file in dist/
-export const HOOK_SCRIPT = resolve(__dirname, "hookEvent.js");
+// Bundled hook script that ships with the package (in dist/).
+export const HOOK_SCRIPT_BUNDLED = resolve(__dirname, "hookEvent.js");
+
+// Stable, package-manager-independent location the hook command points at.
+// We copy the bundled script here so settings.json doesn't reference an
+// ephemeral npx cache path (which npm may garbage-collect).
+// Resolved via a function so tests can override via SKILLS_USAGE_BIN_DIR.
+export function installedScriptPath(): string {
+  const override = process.env.SKILLS_USAGE_BIN_DIR;
+  const base = override ?? join(homedir(), ".claude", "skills-usage", "bin");
+  return join(base, "hookEvent.js");
+}
+
+// Backwards-compat alias — eagerly resolved at module load. Most callers should
+// prefer installedScriptPath() so tests can override after import.
+export const HOOK_SCRIPT_INSTALLED = installedScriptPath();
+export const HOOK_SCRIPT = HOOK_SCRIPT_INSTALLED;
+
 export const PRISTINE_BACKUP = join(homedir(), ".claude", "settings.json.pre-skills-usage.bak");
 export const HOOK_MARKER = "skills-usage:skill-events";
 
@@ -38,7 +54,7 @@ interface HooksConfig { PreToolUse?: MatcherBlock[]; PostToolUse?: MatcherBlock[
 function buildEntry(): MatcherBlock {
   // Use absolute path to the installed Node script. Node hooks need to be invoked
   // by node — chmod +x on a .js file isn't enough on every system, so we run via node.
-  const command = `node ${HOOK_SCRIPT}`;
+  const command = `node ${installedScriptPath()}`;
   return {
     matcher: "Skill",
     hooks: [
@@ -111,11 +127,17 @@ function stripOurHook(entries: MatcherBlock[] | undefined, command: string): Mat
 }
 
 export function install(scope: Scope = "user", projectDir?: string): void {
-  if (!existsSync(HOOK_SCRIPT)) {
-    throw new Error(`hook script not found: ${HOOK_SCRIPT}\n(did the package's dist/ install correctly?)`);
+  if (!existsSync(HOOK_SCRIPT_BUNDLED)) {
+    throw new Error(`bundled hook script not found: ${HOOK_SCRIPT_BUNDLED}\n(did the package's dist/ install correctly?)`);
   }
-  // Best-effort make readable+executable, doesn't matter for `node script.js` invocation
-  try { chmodSync(HOOK_SCRIPT, 0o755); } catch {}
+
+  // Copy the bundled hookEvent.js to a stable per-user location so the
+  // settings.json command stays valid even if this package was launched
+  // from an ephemeral npx cache that gets garbage-collected later.
+  const installed = installedScriptPath();
+  mkdirSync(dirname(installed), { recursive: true });
+  copyFileSync(HOOK_SCRIPT_BUNDLED, installed);
+  try { chmodSync(installed, 0o755); } catch {}
 
   const s = resolveScope(scope, projectDir);
   const settings = readSettings(s.path);
@@ -141,7 +163,7 @@ export function install(scope: Scope = "user", projectDir?: string): void {
   console.log(`✓ Hooks installed in ${s.label} (scope: ${s.name})`);
   for (const line of actions) console.log(line);
   if (bk) console.log(`  Backup: ${bk}`);
-  console.log(`\n  Hook script: ${HOOK_SCRIPT}`);
+  console.log(`\n  Hook script: ${installed}`);
   console.log(`  Events log:  ~/.claude/skills-usage/hook-events.jsonl`);
   console.log(`\nDisable with: skills-usage disable-hook --scope ${s.name}`);
 }
@@ -159,7 +181,7 @@ export function uninstall(scope: Scope = "user", projectDir?: string): void {
     return;
   }
 
-  const cmd = `node ${HOOK_SCRIPT}`;
+  const cmd = `node ${installedScriptPath()}`;
   let changed = false;
   for (const event of ["PreToolUse", "PostToolUse"] as const) {
     const before = hooks[event] ?? [];
@@ -190,12 +212,13 @@ export function status(scope: Scope = "user", projectDir?: string): void {
   }
   const settings = readSettings(s.path);
   const hooks = (settings.hooks ?? {}) as HooksConfig;
-  const cmd = `node ${HOOK_SCRIPT}`;
+  const installed = installedScriptPath();
+  const cmd = `node ${installed}`;
   const pre = hasOurHook(hooks.PreToolUse, cmd);
   const post = hasOurHook(hooks.PostToolUse, cmd);
   const state = pre && post ? "enabled" : pre || post ? "partial" : "disabled";
   console.log(`${s.label}: ${state}`);
   console.log(`  PreToolUse:  ${pre ? "✓" : "·"}`);
   console.log(`  PostToolUse: ${post ? "✓" : "·"}`);
-  console.log(`  Hook script: ${HOOK_SCRIPT} (${existsSync(HOOK_SCRIPT) ? "exists" : "MISSING"})`);
+  console.log(`  Hook script: ${installed} (${existsSync(installed) ? "exists" : "MISSING"})`);
 }

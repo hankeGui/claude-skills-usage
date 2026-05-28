@@ -1,3 +1,11 @@
+## 0.2.0 (2026-05-28)
+
+* **Fix**: hook script copied to permanent location `~/.claude/skills-usage/bin/hookEvent.js` so settings.json no longer references npx cache paths that npm may garbage-collect (closes "hook didn't start after using npx")
+* **Report**: new `Src` column distinguishes user / project / plugin skills; same skill name from different sources is grouped separately
+* **Report**: new `--by-cwd` flag breaks down skills usage per working directory
+* **DB**: schema adds `source` column (idempotent migration on existing DBs)
+* **Tests**: vitest suite covering scan, db, hookInstall (23 tests)
+
 ## 0.1.0 (2026-05-28)
 
 * Initial release

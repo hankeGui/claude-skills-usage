@@ -1,6 +1,6 @@
 {
   "name": "claude-skills-usage",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Track and analyze Claude Code Skill invocations: frequency, latency, token cost, triggering prompts, success/failure.",
   "type": "module",
   "bin": {
